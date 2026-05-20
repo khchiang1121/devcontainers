@@ -1,0 +1,22 @@
+services:
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PIP_INDEX_URL: ""
+        PIP_TRUSTED_HOST: ""
+        # OVERWRITE_APT_SOURCE: "true"
+        # APT_SOURCE_CONTENT: |
+        #   deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] http://archive.ubuntu.com/ubuntu/ noble main universe restricted multiverse
+        #   deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] http://archive.ubuntu.com/ubuntu/ noble-updates main universe restricted multiverse
+        #   deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] http://archive.ubuntu.com/ubuntu/ noble-backports main universe restricted multiverse
+        #   deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] http://security.ubuntu.com/ubuntu/ noble-security main universe restricted multiverse
+        #   deb [trusted=yes] http://ppa.launchpad.net/apt-fast/stable/ubuntu noble main
+        #   deb [trusted=yes] https://packages.microsoft.com/repos/vscode stable main
+        #   deb [trusted=yes] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main
+          
+    # volumes:
+    #   - ~/.ssh:/home/vscode/.ssh:ro
+      # - ~/.vscode-server:/home/vscode/.vscode-server
+    command: sleep infinity
