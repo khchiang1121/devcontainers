@@ -8,10 +8,10 @@ CHANGELOG:
 - upgrade opencode to 1.15
 - upgrade oh-my-opencode to oh-my-openagent 4.2.2
 - remove docker in docker feature (to try to enable docker outside of docker)
-
+- merge apt install etc. command to reduce image size
 ```bash
-devcontainer build --workspace-folder ./devcontainer:ubuntu24-py314-node24-clinecli-ohmyopenagent-claude --image-name khchiang1121/devcontainer:ubuntu24-py314-node24-clinecli-ohmyopenagent-claude-2026-05-20-1
-docker push khchiang1121/devcontainer:ubuntu24-py314-node24-clinecli-ohmyopenagent-claude-2026-05-20-1
+devcontainer build --workspace-folder ./devcontainer:ubuntu24-py314-node24-clinecli-ohmyopenagent-claude --image-name khchiang1121/devcontainer:ubuntu24-py314-node24-clinecli-ohmyopenagent-claude-2026-05-20-3
+docker push khchiang1121/devcontainer:ubuntu24-py314-node24-clinecli-ohmyopenagent-claude-2026-05-20-3
 ```
 
 # 20260130-2

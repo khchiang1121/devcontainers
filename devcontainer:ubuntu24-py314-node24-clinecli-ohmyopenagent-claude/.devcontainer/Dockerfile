@@ -5,8 +5,6 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 # =================================
 
 ARG PYTHON_VERSION=3.14
-
-# APT source overwrite arguments
 ARG OVERWRITE_APT_SOURCE=true
 ARG APT_SOURCE_CONTENT="\
 Types: deb \n\
@@ -59,19 +57,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # =================================
 # APT sources configuration
 # =================================
-
-# 條件式執行 sources.list 更新
 RUN if [[ "${OVERWRITE_APT_SOURCE}" == "true" ]]; then \
     echo "Overwriting APT source..." && \
     rm -f /etc/apt/sources.list.d/* && \
-    # echo "${APT_SOURCE_CONTENT}" > /etc/apt/sources.list ; \
     printf "${APT_SOURCE_CONTENT}" > /etc/apt/sources.list.d/custom.sources ; \
     else \
     echo "Skipping APT source overwrite."; \
     fi
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
     # Basic utilities
     curl \
     wget \
@@ -103,34 +99,30 @@ RUN apt-get update && apt-get install -y \
     python3-venv \
     # Additional tools
     jq \
-    tree
-
-# =================================
-# Chrome installation for cline
-# =================================
-RUN export DEBIAN_FRONTEND=noninteractive \
-    && apt-get install -y fonts-liberation fonts-noto-cjk \
+    tree \
+    # Chrome installation for cline
     && wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt-get install -y ./google-chrome-stable_current_amd64.deb \
-    && rm google-chrome-stable_current_amd64.deb
+    && rm google-chrome-stable_current_amd64.deb \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # =================================
 # Node.js installation
 # =================================
 
 # Install Node.js 24.x
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash -
-RUN apt-get install -y nodejs \
+# Install cline, claude-code and claude-code-router
+
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get update \
+    && apt-get install -y nodejs \
+    && npm install -g cline @anthropic-ai/claude-code @musistudio/claude-code-router \
+    && npm cache clean --force \
     && apt-get autoremove -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-# install cline
-RUN npm install -g cline
-
-# install claude-code and claude-code-router
-RUN npm install -g @anthropic-ai/claude-code
-RUN npm install -g @musistudio/claude-code-router
 
 # =================================
 # System setup
@@ -145,25 +137,6 @@ USER vscode
 # =================================
 ENV PATH="/home/vscode/.local/bin:$PATH"
 
-# Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# create venv using python
-RUN uv venv /home/vscode/.venv --python ${PYTHON_VERSION}
-
-# make `python` point to venv by default
-ENV VIRTUAL_ENV="/home/vscode/.venv"
-ENV PATH="/home/vscode/.venv/bin:${PATH}"
-
-# ensure real pip inside venv
-RUN python -m ensurepip --upgrade \
- && python -m pip install -U pip setuptools wheel
-
-RUN ln -s /home/vscode/.venv/bin/pip3 /home/vscode/.venv/bin/pip
-
-# Copy requirements and install Python dependencies
-# COPY requirements.txt .
-
 # Setup pip index URL if needed
 ARG PIP_INDEX_URL
 ARG PIP_TRUSTED_HOST
@@ -174,15 +147,18 @@ RUN if [ -n "$PIP_INDEX_URL" ]; then \
     echo "index = $PIP_INDEX_URL" >> /etc/pip.conf; \
     fi
 
-# RUN pip install --upgrade pip && \
-#     pip install --no-cache-dir -r requirements.txt
+# Install uv (uv 裝完立刻清快取)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && uv cache clean
 
-# # Switch to developer user
-# USER vscode
+# create venv using python & setup pip
+ENV VIRTUAL_ENV="/home/vscode/.venv"
+ENV PATH="/home/vscode/.venv/bin:${PATH}"
 
-# # Set up Python environment
-# ENV PATH="/home/vscode/.local/bin:$PATH"
-
+RUN uv venv /home/vscode/.venv --python ${PYTHON_VERSION} \
+    && python -m ensurepip --upgrade \
+    && python -m pip install -U pip setuptools wheel --no-cache-dir \
+    && ln -s /home/vscode/.venv/bin/pip3 /home/vscode/.venv/bin/pip \
+    && uv cache clean && rm -rf ~/.cache/pip
 
 # =================================
 # OpenCode installation
@@ -190,22 +166,24 @@ RUN if [ -n "$PIP_INDEX_URL" ]; then \
 RUN curl -fsSL https://opencode.ai/install | bash
 ENV PATH="/home/vscode/.opencode/bin:${PATH}"
 
-
 # =================================
 # Bun installation
 # =================================
 RUN curl -fsSL https://bun.com/install | bash
 ENV PATH="/home/vscode/.bun/bin:${PATH}"
 
-# # to let opencode download stuff
+# =================================
+# OpenCode Initialize
+# =================================
 RUN opencode run "test"
 
 # =================================
 # oh-my-opencode installation
 # =================================
-RUN VERSION=$(npm view oh-my-openagent version) && \
-    echo "Installing oh-my-openagent version: ${VERSION}" && \
-    npx -y oh-my-openagent@${VERSION} install --no-tui --claude=no --gemini=no --copilot=no --openai=no --opencode-zen=no --zai-coding-plan=no && \
-    sed -i "s/oh-my-openagent@latest/oh-my-openagent@${VERSION}/" ~/.config/opencode/opencode.jsonc
+RUN VERSION=$(npm view oh-my-openagent version) \
+    && echo "Installing oh-my-openagent version: ${VERSION}" \
+    && npx -y oh-my-openagent@${VERSION} install --no-tui --claude=no --gemini=no --copilot=no --openai=no --opencode-zen=no --zai-coding-plan=no \
+    && sed -i "s/oh-my-openagent@latest/oh-my-openagent@${VERSION}/" ~/.config/opencode/opencode.jsonc \
+    && rm -rf ~/.npm/_npx
 
 CMD ["sleep", "infinity"]
