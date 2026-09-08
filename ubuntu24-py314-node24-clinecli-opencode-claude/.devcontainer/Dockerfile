@@ -122,6 +122,16 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Guard against CVE-2026-1525 (undici HTTP request smuggling via duplicate
+# Content-Length headers, GHSA-2mjp-6q6p-2qxm): fail the build if Node.js is
+# older than the release that bundles the patched undici (>= 7.24.0).
+RUN NODE_VERSION="$(node --version | sed 's/^v//')" \
+    && MIN_NODE_VERSION="24.17.0" \
+    && if [ "$(printf '%s\n%s\n' "$MIN_NODE_VERSION" "$NODE_VERSION" | sort -V | head -n1)" != "$MIN_NODE_VERSION" ]; then \
+    echo "Node.js $NODE_VERSION is older than $MIN_NODE_VERSION, which is required for the CVE-2026-1525 undici fix" >&2; \
+    exit 1; \
+    fi
+
 # =================================
 # System setup
 # =================================
