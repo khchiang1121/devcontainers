@@ -32,7 +32,7 @@ jobs:
           set -euo pipefail
 
           list_all_folders() {
-            find . -mindepth 1 -maxdepth 1 -type d ! -name '.git' -printf '%f\n'
+            find . -mindepth 1 -maxdepth 1 -type d ! -name '.git' ! -name '.github' ! -name 'deprecated' -printf '%f\n'
           }
 
           folders=()
@@ -62,6 +62,9 @@ jobs:
 
           valid=()
           for d in "${folders[@]}"; do
+            case "$d" in
+              deprecated|deprecated/*) continue ;;
+            esac
             if [ -f "$d/.devcontainer/devcontainer.json" ]; then
               valid+=("$d")
             fi
@@ -82,6 +85,9 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.has_folders == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -93,6 +99,12 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
@@ -109,28 +121,37 @@ jobs:
           set -euo pipefail
           name="${FOLDER#devcontainer:}"
           date_tag="$(date -u +%Y%m%d)"
-          version_tag="khchiang1121/devcontainer:${name}-${date_tag}-${{ github.run_number }}"
-          latest_tag="khchiang1121/devcontainer:${name}-latest"
-          echo "version_tag=$version_tag" >> "$GITHUB_OUTPUT"
-          echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
+          suffix="${name}-${date_tag}-${{ github.run_number }}"
+          echo "version_tag=khchiang1121/devcontainer:${suffix}" >> "$GITHUB_OUTPUT"
+          echo "latest_tag=khchiang1121/devcontainer:${name}-latest" >> "$GITHUB_OUTPUT"
+          echo "ghcr_version_tag=ghcr.io/khchiang1121/devcontainer:${suffix}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_latest_tag=ghcr.io/khchiang1121/devcontainer:${name}-latest" >> "$GITHUB_OUTPUT"
 
       - name: Build devcontainer image
         env:
           FOLDER: ${{ matrix.folder }}
           VERSION_TAG: ${{ steps.tags.outputs.version_tag }}
           LATEST_TAG: ${{ steps.tags.outputs.latest_tag }}
+          GHCR_VERSION_TAG: ${{ steps.tags.outputs.ghcr_version_tag }}
+          GHCR_LATEST_TAG: ${{ steps.tags.outputs.ghcr_latest_tag }}
         run: |
           set -euo pipefail
           devcontainer build \
             --workspace-folder "$FOLDER" \
             --image-name "$VERSION_TAG" \
-            --image-name "$LATEST_TAG"
+            --image-name "$LATEST_TAG" \
+            --image-name "$GHCR_VERSION_TAG" \
+            --image-name "$GHCR_LATEST_TAG"
 
       - name: Push images
         env:
           VERSION_TAG: ${{ steps.tags.outputs.version_tag }}
           LATEST_TAG: ${{ steps.tags.outputs.latest_tag }}
+          GHCR_VERSION_TAG: ${{ steps.tags.outputs.ghcr_version_tag }}
+          GHCR_LATEST_TAG: ${{ steps.tags.outputs.ghcr_latest_tag }}
         run: |
           set -euo pipefail
           docker push "$VERSION_TAG"
           docker push "$LATEST_TAG"
+          docker push "$GHCR_VERSION_TAG"
+          docker push "$GHCR_LATEST_TAG"
