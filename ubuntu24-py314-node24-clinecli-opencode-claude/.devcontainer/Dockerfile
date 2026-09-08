@@ -111,26 +111,24 @@ RUN apt-get update \
 # =================================
 
 # Install Node.js 24.x
-# Install cline, claude-code and claude-code-router
+# Install claude-code and claude-code-router
+#
+# cline is intentionally NOT installed: it pulls in
+# cline -> dify-ai-provider -> @ai-sdk/provider-utils, which pins
+# undici@^5.29.0. That 5.x line was never patched (fixes only landed in
+# 6.24.0/7.24.0) and npm can't dedupe past it due to the major-version bump,
+# so installing cline always ships CVE-2026-1525
+# (GHSA-2mjp-6q6p-2qxm, undici HTTP request smuggling via duplicate
+# Content-Length headers) into the image.
 
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get update \
     && apt-get install -y nodejs \
-    && npm install -g cline @anthropic-ai/claude-code @musistudio/claude-code-router \
+    && npm install -g @anthropic-ai/claude-code @musistudio/claude-code-router \
     && npm cache clean --force \
     && apt-get autoremove -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-# Guard against CVE-2026-1525 (undici HTTP request smuggling via duplicate
-# Content-Length headers, GHSA-2mjp-6q6p-2qxm): fail the build if Node.js is
-# older than the release that bundles the patched undici (>= 7.24.0).
-RUN NODE_VERSION="$(node --version | sed 's/^v//')" \
-    && MIN_NODE_VERSION="24.17.0" \
-    && if [ "$(printf '%s\n%s\n' "$MIN_NODE_VERSION" "$NODE_VERSION" | sort -V | head -n1)" != "$MIN_NODE_VERSION" ]; then \
-    echo "Node.js $NODE_VERSION is older than $MIN_NODE_VERSION, which is required for the CVE-2026-1525 undici fix" >&2; \
-    exit 1; \
-    fi
 
 # =================================
 # System setup
