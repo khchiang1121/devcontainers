@@ -1,0 +1,136 @@
+name: Build and Push Devcontainer Images
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      folder:
+        description: '要重建的資料夾名稱（留空則重建所有變動的資料夾／全部資料夾）'
+        required: false
+        type: string
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      folders: ${{ steps.detect.outputs.folders }}
+      has_folders: ${{ steps.detect.outputs.has_folders }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed devcontainer folders
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+          INPUT_FOLDER: ${{ github.event.inputs.folder }}
+        run: |
+          set -euo pipefail
+
+          list_all_folders() {
+            find . -mindepth 1 -maxdepth 1 -type d ! -name '.git' -printf '%f\n'
+          }
+
+          folders=()
+
+          if [ -n "$INPUT_FOLDER" ]; then
+            folders=("$INPUT_FOLDER")
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            while IFS= read -r d; do
+              folders+=("$d")
+            done < <(list_all_folders)
+          else
+            before="$BEFORE_SHA"
+            if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              before=$(git rev-parse "${CURRENT_SHA}~1" 2>/dev/null || echo "")
+            fi
+            if [ -z "$before" ]; then
+              while IFS= read -r d; do
+                folders+=("$d")
+              done < <(list_all_folders)
+            else
+              while IFS= read -r d; do
+                [ -z "$d" ] && continue
+                folders+=("$d")
+              done < <(git diff --name-only "$before" "$CURRENT_SHA" | cut -d/ -f1 | sort -u)
+            fi
+          fi
+
+          valid=()
+          for d in "${folders[@]}"; do
+            if [ -f "$d/.devcontainer/devcontainer.json" ]; then
+              valid+=("$d")
+            fi
+          done
+
+          if [ ${#valid[@]} -eq 0 ]; then
+            echo "folders=[]" >> "$GITHUB_OUTPUT"
+            echo "has_folders=false" >> "$GITHUB_OUTPUT"
+          else
+            json=$(printf '%s\n' "${valid[@]}" | sort -u | jq -R . | jq -sc .)
+            echo "folders=$json" >> "$GITHUB_OUTPUT"
+            echo "has_folders=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "Detected folders: ${valid[*]:-（無）}"
+
+  build:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_folders == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        folder: ${{ fromJson(needs.detect-changes.outputs.folders) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install devcontainer CLI
+        run: npm install -g @devcontainers/cli
+
+      - name: Compute image tags
+        id: tags
+        env:
+          FOLDER: ${{ matrix.folder }}
+        run: |
+          set -euo pipefail
+          name="${FOLDER#devcontainer:}"
+          date_tag="$(date -u +%Y%m%d)"
+          version_tag="khchiang1121/devcontainer:${name}-${date_tag}-${{ github.run_number }}"
+          latest_tag="khchiang1121/devcontainer:${name}-latest"
+          echo "version_tag=$version_tag" >> "$GITHUB_OUTPUT"
+          echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Build devcontainer image
+        env:
+          FOLDER: ${{ matrix.folder }}
+          VERSION_TAG: ${{ steps.tags.outputs.version_tag }}
+          LATEST_TAG: ${{ steps.tags.outputs.latest_tag }}
+        run: |
+          set -euo pipefail
+          devcontainer build \
+            --workspace-folder "$FOLDER" \
+            --image-name "$VERSION_TAG" \
+            --image-name "$LATEST_TAG"
+
+      - name: Push images
+        env:
+          VERSION_TAG: ${{ steps.tags.outputs.version_tag }}
+          LATEST_TAG: ${{ steps.tags.outputs.latest_tag }}
+        run: |
+          set -euo pipefail
+          docker push "$VERSION_TAG"
+          docker push "$LATEST_TAG"
